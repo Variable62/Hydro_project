@@ -28,7 +28,7 @@ const int apiPort = 8000;
 #define MOTOR_PUMP_PIN 13
 
 // --- Object Declarations ---
-#define DHTTYPE DHT11 // Change: Updated sensor type to DHT11
+#define DHTTYPE DHT22 // Change: Updated sensor type to DHT11
 DHT dht1(DHTPIN1, DHTTYPE);
 DHT dht2(DHTPIN2, DHTTYPE);
 BH1750 lux1(0x23);
@@ -92,7 +92,7 @@ void setup() {
   digitalWrite(MIST2_PIN, LOW);
   digitalWrite(LIGHT1_PIN, LOW);
   digitalWrite(LIGHT2_PIN, LOW);
-  digitalWrite(MOTOR_PUMP_PIN, HIGH);
+  digitalWrite(MOTOR_PUMP_PIN, LOW);
 
   checkAndReconnectWiFi();
   timeClient.begin();
@@ -104,8 +104,10 @@ void setup() {
 void loop() {
   checkAndReconnectWiFi(); // Check connection at the start of every loop
   timeClient.update();
+  MOTOR_PUMP_CONTROL();
 
   // [CRITICAL FIX] Read current time INSIDE the loop to get updated values
+  int currentHour = timeClient.getHours();
   int currentSecond = timeClient.getSeconds();
 
   // Main execution block runs every 30 seconds
@@ -126,7 +128,6 @@ void loop() {
   } else if (currentSecond != 0 && currentSecond != 30) { // Reset flag once second changes
     hasSentForThisTrigger = false;
   }
-  
   delay(100); // Small delay for stability
 }
 
@@ -319,4 +320,17 @@ void checkAndReconnectWiFi() {
     delay(500);
   }
   Serial.println("\nWiFi reconnected!");
+}
+void MOTOR_PUMP_CONTROL () {
+  int currentHour = timeClient.getHours();
+  switch (currentHour) {
+    case 7 : 
+      digitalWrite(MOTOR_PUMP_PIN,HIGH);
+      break;
+    case 12 : 
+    digitalWrite(MOTOR_PUMP_PIN,HIGH);
+      break;
+    default :
+      digitalWrite(MOTOR_PUMP_PIN,LOW);
+  }
 }
