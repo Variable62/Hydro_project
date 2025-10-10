@@ -19,6 +19,8 @@ const int apiPort = 8000;
 #define FLOAT_SWITCH_PIN 3
 #define DHTPIN1 4
 #define DHTPIN2 5
+
+#define FAN_PIN 6  // พัดลมใหญ่
 #define FAN1_PIN 7
 #define FAN2_PIN 8
 #define MIST1_PIN 9
@@ -28,7 +30,7 @@ const int apiPort = 8000;
 #define MOTOR_PUMP_PIN 13
 
 // --- Object Declarations ---
-#define DHTTYPE DHT22 // Change: Updated sensor type to DHT11
+#define DHTTYPE DHT11
 DHT dht1(DHTPIN1, DHTTYPE);
 DHT dht2(DHTPIN2, DHTTYPE);
 BH1750 lux1(0x23);
@@ -53,12 +55,12 @@ bool motorPumpState = false;
 bool hasSentForThisTrigger = false;
 
 struct UserSettings {
-  float temp_Max = 35.0;
-  float humid_Min = 60.0;
-  int light_On_Hour = 6;
-  int light_On_Minute = 0;
-  int light_Off_Hour = 21;
-  int light_Off_Minute = 0;
+  float temp_Max;
+  float humid_Min;
+  int light_On_Hour;
+  int light_On_Minute;
+  int light_Off_Hour;
+  int light_Off_Minute;
 };
 UserSettings settings;
 
@@ -68,7 +70,7 @@ UserSettings settings;
 // =================================================================
 void setup() {
   Serial.begin(115200);
-  Serial.println("\nInitializing Hydroponics Control System v26 (Multi-HTTP Fix)...");
+  Serial.println("\nInitializing Hydroponics Control System v29 (Added Big Fan)...");
 
   dht1.begin();
   dht2.begin();
@@ -84,8 +86,9 @@ void setup() {
   pinMode(LIGHT1_PIN, OUTPUT);
   pinMode(LIGHT2_PIN, OUTPUT);
   pinMode(MOTOR_PUMP_PIN, OUTPUT);
+  pinMode(FAN_PIN, OUTPUT);
 
-  // Set all relays to default OFF state initially (for ACTIVE LOW relays)
+  // Set all relays to default OFF state (for ACTIVE HIGH relays)
   digitalWrite(FAN1_PIN, LOW);
   digitalWrite(FAN2_PIN, LOW);
   digitalWrite(MIST1_PIN, LOW);
@@ -93,6 +96,7 @@ void setup() {
   digitalWrite(LIGHT1_PIN, LOW);
   digitalWrite(LIGHT2_PIN, LOW);
   digitalWrite(MOTOR_PUMP_PIN, LOW);
+  digitalWrite(FAN_PIN, LOW);
 
   checkAndReconnectWiFi();
   timeClient.begin();
@@ -102,15 +106,11 @@ void setup() {
 // --- MAIN LOOP ---
 // =================================================================
 void loop() {
-  checkAndReconnectWiFi(); // Check connection at the start of every loop
+  checkAndReconnectWiFi();
   timeClient.update();
-  MOTOR_PUMP_CONTROL();
 
-  // [CRITICAL FIX] Read current time INSIDE the loop to get updated values
-  int currentHour = timeClient.getHours();
   int currentSecond = timeClient.getSeconds();
 
-  // Main execution block runs every 30 seconds
   if ((currentSecond == 0 || currentSecond == 30) && !hasSentForThisTrigger) {
     hasSentForThisTrigger = true;
     Serial.println("\n==============================================");
@@ -125,10 +125,10 @@ void loop() {
     sendDataToGoogleSheets();
 
     Serial.println("Cycle finished.");
-  } else if (currentSecond != 0 && currentSecond != 30) { // Reset flag once second changes
+  } else if (currentSecond != 0 && currentSecond != 30) {
     hasSentForThisTrigger = false;
   }
-  delay(100); // Small delay for stability
+  delay(100);
 }
 
 // =================================================================
@@ -144,7 +144,7 @@ void fetchUserSettings() {
   Serial.print("User settings fetch status code: ");
   Serial.println(statusCode);
   
-  http3.stop(); // [IMPORTANT] Close the connection
+  http3.stop();
 
   if (statusCode == 200) {
     JSONVar response = JSON.parse(payload);
@@ -172,7 +172,7 @@ void fetchControlStates() {
   Serial.print("Control states fetch status code: ");
   Serial.println(statusCode);
   
-  http2.stop(); // [IMPORTANT] Close the connection
+  http2.stop();
 
   if (statusCode == 200) {
     JSONVar response = JSON.parse(payload);
@@ -214,7 +214,7 @@ void readAllSensors() {
   float offset_temp = -10.0 ;
   float offset_pH = +2;
   float offset_humidity = -15;
-   
+    
   t1 += offset_temp;
   t2 += offset_temp;
   h1 += offset_humidity;
@@ -236,6 +236,9 @@ void determineRelayStates() {
     fan2State = (!isnan(t2) && t2 > settings.temp_Max);
     mist1State = (!isnan(h1) && h1 < settings.humid_Min);
     mist2State = (!isnan(h2) && h2 < settings.humid_Min);
+    Serial.println(settings.temp_Max);
+    Serial.println(settings.humid_Min);
+
 
     if (lightOn < lightOff) {
       light1State = (timeNow >= lightOn && timeNow < lightOff);
@@ -247,7 +250,7 @@ void determineRelayStates() {
 }
 
 void applyRelayStates() {
-  // Assuming ACTIVE LOW logic: LOW = ON, HIGH = OFF.
+
   digitalWrite(FAN1_PIN, fan1State ? HIGH : LOW);
   digitalWrite(FAN2_PIN, fan2State ? HIGH : LOW);
   digitalWrite(MIST1_PIN, mist1State ? HIGH : LOW);
@@ -255,6 +258,12 @@ void applyRelayStates() {
   digitalWrite(LIGHT1_PIN, light1State ? HIGH : LOW);
   digitalWrite(LIGHT2_PIN, light2State ? HIGH : LOW);
   digitalWrite(MOTOR_PUMP_PIN, motorPumpState ? HIGH : LOW);
+
+          if (fan1State || fan2State) {
+    digitalWrite(FAN_PIN, HIGH); // Turn big fan ON
+  } else {
+    digitalWrite(FAN_PIN, LOW); // Turn big fan OFF
+  }
 }
 
 void sendDataToGoogleSheets() {
@@ -286,7 +295,7 @@ void sendDataToGoogleSheets() {
   Serial.print("API send data status code: ");
   Serial.println(statusCode);
   
-  http4.stop(); // [IMPORTANT] Close the connection
+  http4.stop();
 }
 
 // =================================================================
@@ -300,6 +309,11 @@ void printStatus() {
   Serial.print("Temp2: "); Serial.print(t2); Serial.print("C, Hum2: "); Serial.print(h2); Serial.println("%");
   Serial.print("Lights: "); Serial.println(light1State ? "ON" : "OFF");
   Serial.print("Motor Pump: "); Serial.println(motorPumpState ? "ON" : "OFF");
+  
+  // Also print the status of the new big fan
+  bool bigFanState = (fan1State || fan2State);
+  Serial.print("Big Fan: "); Serial.println(bigFanState ? "ON" : "OFF");
+
   Serial.println("----------------------");
 }
 
@@ -320,17 +334,4 @@ void checkAndReconnectWiFi() {
     delay(500);
   }
   Serial.println("\nWiFi reconnected!");
-}
-void MOTOR_PUMP_CONTROL () {
-  int currentHour = timeClient.getHours();
-  switch (currentHour) {
-    case 7 : 
-      digitalWrite(MOTOR_PUMP_PIN,HIGH);
-      break;
-    case 12 : 
-    digitalWrite(MOTOR_PUMP_PIN,HIGH);
-      break;
-    default :
-      digitalWrite(MOTOR_PUMP_PIN,LOW);
-  }
 }
