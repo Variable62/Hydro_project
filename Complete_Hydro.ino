@@ -8,8 +8,8 @@
 #include <ArduinoHttpClient.h>
 
 // --- WiFi & API Settings ---
-const char* ssid = "thavan";
-const char* password = "88888888";
+const char* ssid = "ssid";
+const char* password = "password";
 const char* apiHost = "160.238.13.148";
 const int apiPort = 8000;
 
@@ -30,7 +30,7 @@ const int apiPort = 8000;
 #define MOTOR_PUMP_PIN 13
 
 // --- Object Declarations ---
-#define DHTTYPE DHT11
+#define DHTTYPE DHT22
 DHT dht1(DHTPIN1, DHTTYPE);
 DHT dht2(DHTPIN2, DHTTYPE);
 BH1750 lux1(0x23);
@@ -63,8 +63,6 @@ struct UserSettings {
   int light_Off_Minute;
 };
 UserSettings settings;
-
-
 // =================================================================
 // --- SETUP ---
 // =================================================================
@@ -101,7 +99,6 @@ void setup() {
   checkAndReconnectWiFi();
   timeClient.begin();
 }
-
 // =================================================================
 // --- MAIN LOOP ---
 // =================================================================
@@ -189,8 +186,7 @@ void fetchControlStates() {
     } else {
       controlMode = "WebApp";
     }
-
-    if (!controlMode.equals("Auto")) {
+      if (!controlMode.equals("Auto")) {
       if (data.hasOwnProperty("Light1")) light1State = String((const char*)data["Light1"]).equals("ON");
       if (data.hasOwnProperty("Light2")) light2State = String((const char*)data["Light2"]).equals("ON");
       if (data.hasOwnProperty("Fan1")) fan1State = String((const char*)data["Fan1"]).equals("ON");
@@ -228,6 +224,7 @@ void determineRelayStates() {
   motorPumpState = (currentHour == 7 || currentHour == 12 || currentHour == 18);
 
   if (controlMode.equals("Auto")) {
+    
     int timeNow = currentHour * 60 + timeClient.getMinutes();
     int lightOn = settings.light_On_Hour * 60 + settings.light_On_Minute;
     int lightOff = settings.light_Off_Hour * 60 + settings.light_Off_Minute;
@@ -238,7 +235,6 @@ void determineRelayStates() {
     mist2State = (!isnan(h2) && h2 < settings.humid_Min);
     Serial.println(settings.temp_Max);
     Serial.println(settings.humid_Min);
-
 
     if (lightOn < lightOff) {
       light1State = (timeNow >= lightOn && timeNow < lightOff);
@@ -259,7 +255,7 @@ void applyRelayStates() {
   digitalWrite(LIGHT2_PIN, light2State ? HIGH : LOW);
   digitalWrite(MOTOR_PUMP_PIN, motorPumpState ? HIGH : LOW);
 
-          if (fan1State || fan2State) {
+     if (fan1State || fan2State) {
     digitalWrite(FAN_PIN, HIGH); // Turn big fan ON
   } else {
     digitalWrite(FAN_PIN, LOW); // Turn big fan OFF
